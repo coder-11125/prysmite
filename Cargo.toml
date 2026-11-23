@@ -1,0 +1,26 @@
+[package]
+name = "prysmite"
+version = "0.1.0"
+edition = "2021"
+description = "Pry your Flow code apart: a from-scratch Flow (typed JavaScript) parser in Rust"
+license = "MIT"
+readme = "README.md"
+keywords = ["flow", "parser", "javascript", "jsx", "ast"]
+categories = ["parser-implementations", "development-tools"]
+exclude = ["tools/", ".github/", ".clusterfuzzlite/", "fuzz/", "target/"]
+
+[lib]
+name = "prysmite"
+path = "src/lib.rs"
+
+[[bin]]
+name = "prysmite"
+path = "src/main.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+
+[profile.release]
+lto = true
+codegen-units = 1

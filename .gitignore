@@ -1,0 +1,11 @@
+/target
+Cargo.lock.bak
+.DS_Store
+/tools/conformance/node_modules
+/tools/conformance/flow-repo
+*.omc/
+/tools/conformance/fuzz-report.json
+/fuzz/target
+/fuzz/Cargo.lock
+/fuzz/corpus
+/fuzz/artifacts

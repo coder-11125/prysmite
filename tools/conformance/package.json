@@ -1,0 +1,6 @@
+{
+  "name": "prysmite-conformance",
+  "private": true,
+  "description": "Compare prysmite against the reference flow-parser on Flow's own test fixtures",
+  "dependencies": { "flow-parser": "0.342.0" }
+}
