@@ -186,7 +186,7 @@ options, which also gives Flow's native trees, error messages and interned comme
 | Real Flow code: 2,717 files from React Native (`packages/`) and Metro, accept/reject vs Flow's Rust parser | **100 %** |
 | …`--flow-native` trees including ranges | **100 %** (2,715 files both accept) |
 | Real-world JS (18,039 files from `node_modules`) vs the npm package: accept/reject | **100 %** (18,013 accepted by both, 26 rejected by both) |
-| Mutation fuzzing against `flow-parser` (token deletions, swaps, insertions; `tools/conformance/fuzz.js`) | see the note below |
+| Mutation fuzzing against `flow-parser` (token deletions, swaps, insertions; `tools/conformance/fuzz.js`) | 1 disagreement in 6,000 fresh mutants (99.98 %); see the note below |
 
 Fixtures that switch Flow syntax off can't be expressed through the npm package, so those are also
 checked against Flow's Rust parser (and against the result recorded next to them, `*.tree.json`).
@@ -208,8 +208,10 @@ These are measured against Flow's Rust parser, not claimed:
 | **Depth limits** | By design the limits differ: the library stops at 512 units (about 200 levels, safe on a 2 MiB stack), the CLI at 4096 (about 1,900 levels). Flow's Rust parser accepts about 1,000 levels but not 3,000, and the npm build overflows its stack near 1,000, so inputs between roughly 1,000 and 3,000 levels can disagree |
 | **Option combinations** | The fixtures' own combinations agree 100 % with Flow's parser (above). Combinations no fixture uses are not checked, and `--no-match`/`--no-records` switches don't exist |
 
-Mutation fuzzing: the previous run found 1 disagreement in 6,000 mutants and each fix revealed a few more
-of the same kind, so 100 % is established for the corpora above, not for all input.
+Mutation fuzzing: each round of fixes reveals a few more cases of the same kind (this round started from 5
+disagreements in 6,000 mutants and ended at 1 on fresh seeds: `this<T>` types, `new` as a type-parameter
+name, templates in optional chains, `interface of {}`, rest-pattern trailing commas, …), so 100 % is
+established for the corpora above, not for all input.
 
 ### Known differences from Flow
 

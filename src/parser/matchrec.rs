@@ -309,7 +309,6 @@ impl<'a> Parser<'a> {
         while !self.is("}") {
             if self.is("...") {
                 rest = Some(Box::new(self.parse_match_rest()?));
-                self.eat(",")?;
                 if !self.is("}") {
                     return self.error("Rest pattern must be last", self.tok.start);
                 }
@@ -377,7 +376,6 @@ impl<'a> Parser<'a> {
         while !self.is("]") {
             if self.is("...") {
                 rest = Some(Box::new(self.parse_match_rest()?));
-                self.eat(",")?;
                 if !self.is("]") {
                     return self.error("Rest pattern must be last", self.tok.start);
                 }

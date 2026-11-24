@@ -596,6 +596,9 @@ impl<'a> Parser<'a> {
                 self.next()?;
                 base = self.node(start, Kind::NonNullExpression { expression: Box::new(base) });
             } else if self.is("`") {
+                if in_chain {
+                    return self.error("Template literals may not be used in an optional chain.", self.tok.start);
+                }
                 let quasi = self.parse_template()?;
                 base = self.node(
                     start,

@@ -142,8 +142,10 @@ impl<'a> Parser<'a> {
                 let nx = self.peek()?;
                 nx.tok == Tok::Ident("type".into()) && !nx.nl_before
             }
-            "interface" | "component" => self.ident_follows_any_line()?,
-            "type" | "declare" | "record" | "hook" => self.ident_follows()?,
+            "interface" => self.interface_name_follows()?,
+            "component" => self.ident_follows_any_line()?,
+            "type" => self.type_name_follows()?,
+            "declare" | "record" | "hook" => self.ident_follows()?,
             _ => false,
         })
     }
@@ -178,6 +180,17 @@ impl<'a> Parser<'a> {
         // A reserved word can't be a name, so `component` before one is a plain identifier.
         Ok((any_line || !nx.nl_before)
             && matches!(&nx.tok, Tok::Ident(n) if !matches!(n.as_str(), "in" | "instanceof") && !is_reserved(n)))
+    }
+
+    /// `interface <name>`: any identifier names the interface, even `of`, `as` or `in`.
+    pub(super) fn interface_name_follows(&mut self) -> PResult<bool> {
+        Ok(matches!(&self.peek()?.tok, Tok::Ident(_)))
+    }
+
+    /// `type <name>`: like `interface`, except `in`/`instanceof` (then it's an expression).
+    pub(super) fn type_name_follows(&mut self) -> PResult<bool> {
+        let nx = self.peek()?;
+        Ok(!nx.nl_before && matches!(&nx.tok, Tok::Ident(n) if !matches!(n.as_str(), "in" | "instanceof")))
     }
 
     /// Does an identifier follow, even on a later line? (`component` and `interface` ignore newlines.)
@@ -216,7 +229,9 @@ impl<'a> Parser<'a> {
                 if self.is_kw("export") {
                     return self.parse_export();
                 }
-                self.parse_class(true)
+                let c = self.parse_class(true)?;
+                self.require_declaration_name(&c)?;
+                Ok(c)
             }
             Tok::Ident(name) => match name.as_str() {
                 "const" if self.opts.enums && self.peek()?.tok == Tok::Ident("enum".into()) => {
@@ -380,7 +395,7 @@ impl<'a> Parser<'a> {
                 }
                 "export" if !top_level && !self.ambient => self.unexpected(),
                 "export" => self.parse_export(),
-                "type" if self.opts.types && self.ident_follows()? => self.parse_type_alias(start, false),
+                "type" if self.opts.types && self.type_name_follows()? => self.parse_type_alias(start, false),
                 "opaque" if self.opts.types => {
                     let nx = self.peek()?;
                     if nx.tok == Tok::Ident("type".into()) && !nx.nl_before {
@@ -392,7 +407,7 @@ impl<'a> Parser<'a> {
                         self.parse_expression_statement()
                     }
                 }
-                "interface" if self.opts.types && self.ident_follows_any_line()? => self.parse_interface(start, false),
+                "interface" if self.opts.types && self.interface_name_follows()? => self.parse_interface(start, false),
                 "declare" if self.opts.types && self.ident_follows()? => self.parse_declare(start),
                 "enum" if self.opts.enums => self.parse_enum(start, false),
                 // Flow reads a statement-leading `static` as a (misplaced) class-member keyword.
@@ -1405,7 +1420,14 @@ impl<'a> Parser<'a> {
                 return self.error("Abstract properties can only appear within an abstract class.", start);
             }
             let type_annotation = if self.is(":") { Some(Box::new(self.parse_type_annotation()?)) } else { None };
-            self.semicolon()?;
+            // As for other fields, a typed one needs no separator unless the next token continues it.
+            if type_annotation.is_some() {
+                if !self.eat(";")? && (self.is("[") || self.is("(")) {
+                    return self.unexpected();
+                }
+            } else {
+                self.semicolon()?;
+            }
             return Ok(self.node(
                 start,
                 Kind::AbstractPropertyDefinition {

@@ -379,6 +379,11 @@ impl<'a> Parser<'a> {
                     "undefined" => Some(Kind::UndefinedTypeAnnotation),
                     _ => None,
                 };
+                if name == "infer" && !matches!(self.peek()?.tok, Tok::Ident(_)) && self.opts.types {
+                    // `infer` is always the keyword in a type; it needs a name.
+                    self.next()?;
+                    return self.unexpected_expecting("an identifier");
+                }
                 if name == "infer" && matches!(self.peek()?.tok, Tok::Ident(_)) {
                     self.next()?;
                     let pstart = self.tok.start;
@@ -470,7 +475,8 @@ impl<'a> Parser<'a> {
                         return Ok(self.node(start, Kind::InterfaceTypeAnnotation { extends, body: Box::new(body) }));
                     }
                 }
-                if let Some(kind) = simple {
+                let this_generic = name == "this" && matches!(self.peek()?.tok, Tok::Punct("<"));
+                if let (Some(kind), false) = (simple, this_generic) {
                     // `string.x` or `string<T>` would be a named type; treat as keyword otherwise.
                     self.next()?;
                     return Ok(self.node(start, kind));
@@ -686,7 +692,7 @@ impl<'a> Parser<'a> {
 
     fn parse_fn_type_param(&mut self) -> PResult<Node> {
         // Flow tolerates a stray leading `|` before a named parameter: `(a: A, | b: B)`.
-        if self.is("|") {
+        if self.is("|") || self.is("&") {
             let snap = self.snapshot();
             self.next()?;
             if !self.ident_then_colon()? {
@@ -698,7 +704,8 @@ impl<'a> Parser<'a> {
             let name = self.parse_ident_name()?;
             if let Kind::Identifier { name: n, .. } = &name.kind {
                 // Flow refuses only the words that start a type of their own here.
-                if matches!(
+                if !(self.colon_sig && n == "new")
+                    && matches!(
                     n.as_str(),
                     "void"
                         | "true"
@@ -804,7 +811,10 @@ impl<'a> Parser<'a> {
         let saved = self.no_anon_fn_type;
         self.no_anon_fn_type = false;
         self.expect("(")?;
-        let (params, rest, this_param) = self.parse_fn_type_params_after(None)?;
+        let saved_sig = std::mem::replace(&mut self.colon_sig, sep == ":");
+        let parsed = self.parse_fn_type_params_after(None);
+        self.colon_sig = saved_sig;
+        let (params, rest, this_param) = parsed?;
         let params_end = self.prev_end;
         if sep == ":" && !self.is(":") {
             self.fn_params_end = params_end;
@@ -1009,7 +1019,8 @@ impl<'a> Parser<'a> {
                     if !class_like {
                         break;
                     }
-                    if self.is_kw("static") && (self.key_follows()? || self.call_follows()?) {
+                    // After `abstract`, `static` is just a name (`abstract static m()` is then an error).
+                    if self.is_kw("static") && !is_abstract && (self.key_follows()? || self.call_follows()?) {
                         if is_static {
                             if self.call_follows()? {
                                 break; // `static static()`: a method named `static`
@@ -1030,6 +1041,9 @@ impl<'a> Parser<'a> {
                     } else if self.is_kw("abstract") && self.key_follows()? {
                         if is_abstract {
                             return self.unexpected();
+                        }
+                        if is_static {
+                            self.early("`static` modifier can't be used with the `abstract` modifier.", self.tok.start)?;
                         }
                         is_abstract = true;
                     } else if matches!(&self.tok.tok, Tok::Ident(n) if matches!(n.as_str(), "public" | "private" | "protected"))
@@ -1506,7 +1520,8 @@ impl<'a> Parser<'a> {
                 }
             }
             let name = match self.tok.tok.clone() {
-                Tok::Ident(n) if n != "const" && n != "extends" && n != "function" && n != "import" => {
+                // `new` starts a constructor type, so it can't name a type parameter.
+                Tok::Ident(n) if n != "const" && n != "extends" && n != "function" && n != "import" && n != "new" => {
                     self.next()?;
                     n
                 }

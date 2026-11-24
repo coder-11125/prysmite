@@ -231,6 +231,9 @@ pub struct Parser<'a> {
     pub(crate) no_anon_fn_type: bool,
     /// Function-type parenthesization context for the oxc rules (0 none, 1 union, 2 intersection, 3 type operator).
     pub(crate) fn_ctx: u8,
+    /// Parsing the parameters of a signature with a `:` return (`declare function`, methods): Flow
+    /// lets those parameters be named with words that start a type, like `new`.
+    pub(crate) colon_sig: bool,
     /// Decorators parsed before a class, to be attached by `parse_class`.
     pub(crate) pending_decorators: Vec<Node>,
     /// Decorators written before `export`/statement start are outside the class range.
@@ -305,6 +308,7 @@ impl<'a> Parser<'a> {
             no_ret_type: false,
             no_anon_fn_type: false,
             fn_ctx: 0,
+            colon_sig: false,
             pending_decorators: Vec::new(),
             decorators_outside: false,
             inner_decorator_start: None,
