@@ -666,8 +666,11 @@ impl<'a> Parser<'a> {
                     let right = self.parse_assign()?;
                     let lstart = if self.opts.native_ranges { name.start } else { local.start };
                     // Flow quirk: a parenthesized default's closing `)` isn't in the pattern's range.
-                    let end =
-                        if self.parenthesized.contains(&(right.start, right.end)) { right.end } else { self.prev_end };
+                    let end = if !self.opts.native_ranges && self.parenthesized.contains(&(right.start, right.end)) {
+                        right.end
+                    } else {
+                        self.prev_end
+                    };
                     local = Node::new(
                         Kind::AssignmentPattern { left: Box::new(local), right: Box::new(right) },
                         lstart,
@@ -785,7 +788,7 @@ impl<'a> Parser<'a> {
         let tstart = self.tok.start;
         let tp = if self.is("<") { Some(Box::new(self.parse_type_params()?)) } else { None };
         // Flow quirk: a declared hook's type starts at its `(`, after any type parameters.
-        let fstart = self.tok.start;
+        let fstart = if self.opts.native_ranges { tstart } else { self.tok.start };
         let f = self.parse_fn_type_rest(fstart, tp, ":")?;
         let hook = self.fn_type_to_hook(f);
         let ann = Node::new(Kind::TypeAnnotation { type_annotation: Box::new(hook.clone()) }, tstart, hook.end);

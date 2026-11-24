@@ -12,6 +12,7 @@ pub mod ast;
 pub mod comments;
 pub mod entities;
 pub mod error;
+mod id_unicode;
 pub mod lexer;
 pub mod parser;
 
@@ -80,26 +81,10 @@ pub fn to_native_flavor(value: &mut serde_json::Value) {
                 Some("Literal") => {
                     m.remove("literalType");
                 }
-                Some("ExportNamedDeclaration") | Some("DeclareExportDeclaration") => {
-                    if ty.as_deref() == Some("DeclareExportDeclaration") {
-                        m.remove("implicitDeclare");
-                        if let Some(d) = m.get_mut("declaration").and_then(|d| d.as_object_mut()) {
-                            d.remove("implicitDeclare");
-                        }
-                    }
-                    // Native trees only mark specifiers in `export type {..}` or when one is a `type` one.
-                    let decl_type = m.get("exportKind").and_then(|k| k.as_str()) == Some("type");
-                    let all_value = m.get("specifiers").and_then(|s| s.as_array()).is_some_and(|specs| {
-                        specs.iter().all(|sp| sp.get("exportKind").and_then(|k| k.as_str()).unwrap_or("value") == "value")
-                    });
-                    if all_value && !decl_type {
-                        if let Some(specs) = m.get_mut("specifiers").and_then(|s| s.as_array_mut()) {
-                            specs.iter_mut().for_each(|sp| {
-                                if let Some(o) = sp.as_object_mut() {
-                                    o.remove("exportKind");
-                                }
-                            });
-                        }
+                Some("DeclareExportDeclaration") => {
+                    m.remove("implicitDeclare");
+                    if let Some(d) = m.get_mut("declaration").and_then(|d| d.as_object_mut()) {
+                        d.remove("implicitDeclare");
                     }
                 }
                 Some("BigIntLiteralTypeAnnotation") => {

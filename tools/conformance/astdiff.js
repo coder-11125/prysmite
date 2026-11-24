@@ -6,7 +6,7 @@ const BIN=process.env.PRYSMITE_BIN || require('path').resolve(__dirname, '../../
 function optsFor(f){ let ex={}; try{ex=JSON.parse(fs.readFileSync(f.replace(/\.js$/,'.options.json'),'utf8'))}catch(e){} return ex; }
 const args=process.argv.slice(3); const show=args.includes('--show')?args[args.indexOf('--show')+1]:null;
 const limit=args.includes('--limit')?+args[args.indexOf('--limit')+1]:2000000;
-const SKIP=new Set([...(process.argv.includes('--trees')?['sourceType']:[]),'loc','range','start','end','comments','trailingComments','leadingComments','tokens','errors','docblock','interpreter']);
+const SKIP=new Set([...(process.argv.includes('--trees')||process.argv.includes('--oracle')?['sourceType']:[]),'loc','range','start','end','comments','trailingComments','leadingComments','tokens','errors','docblock','interpreter']);
 const checkRanges=args.includes('--ranges'); let MAP=null; const counts={}, examples={};
 let compared=0, identical=0;
 function rec(key,file,detail){counts[key]=(counts[key]||0)+1;(examples[key]=examples[key]||[]).length<3&&examples[key].push(file+' '+detail);}
@@ -33,13 +33,15 @@ function diff(a,b,file,parent,field){ // a=flow, b=mine
   if(a===null||b===null||a===undefined||b===undefined){ if((a==null&&b===false)||(b==null&&a===false)) return true; rec(`${parent}.${field}: ${J(a)?.slice(0,30)} vs ${J(b)?.slice(0,30)}`,file,'');return false;}
   rec(`${parent}.${field}: value`,file,`flow=${J(a).slice(0,40)} mine=${J(b).slice(0,40)}`); return false;
 }
-const TREES=args.includes('--trees'); // reference = the tree recorded next to each fixture (Flow's own parser)
+const ORACLE=args.includes('--oracle'); // reference = Flow's own parser, run live (see oracle/README.md)
+function oracleTree(f){const o=f.replace(/\.js$/,'.options.json');const r=cp.spawnSync(process.env.ORACLE_BIN||'/tmp/oracle/target/release/oracle',fs.existsSync(o)?[f,o]:[f],{encoding:'utf8',maxBuffer:1<<30});if(r.status!==0)return null;try{return JSON.parse(r.stdout)}catch(e){return null}}
+const TREES=args.includes('--trees')||ORACLE; // reference = the tree recorded next to each fixture (Flow's own parser)
 const files=fs.readFileSync(process.argv[2],'utf8').split('\n').filter(f=>f&&fs.statSync(f).isFile()).slice(0,limit);
 if(TREES){
   // One process per file (flags differ per fixture); comment types are on in Flow's own parser.
   const mapFor=(f)=>{const buf=Buffer.from(fs.readFileSync(f).toString('utf8'));const M=new Int32Array(buf.length+1);let u=0,i2=0;while(i2<buf.length){const c=buf[i2];const len=c<0x80?1:c<0xe0?2:c<0xf0?3:4;for(let k=0;k<len&&i2+k<buf.length;k++)M[i2+k]=u;u+=len===4?2:1;i2+=len;}M[buf.length]=u;return M;};
   for(const f of files){
-    const t=recordedTree(f); if(!t||(t.errors&&t.errors.length)) continue;
+    const t=ORACLE?oracleTree(f):recordedTree(f); if(!t||(t.errors&&t.errors.length)) continue;
     const r=cp.spawnSync(BIN,['-m','--flow-native','--comment-types','--es-extras',...cliFlags(f),f],{encoding:'utf8',maxBuffer:1<<30});
     if(r.status!==0){compared++;rec('mine rejects a file Flow accepts',f,(r.stderr.split('\n')[0]||''));continue;}
     compared++; if(checkRanges) MAP=mapFor(f);

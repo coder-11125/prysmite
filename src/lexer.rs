@@ -73,11 +73,17 @@ fn valid_separators(text: &str, prefixed: bool) -> bool {
 }
 
 pub fn is_id_start(c: char) -> bool {
-    c == '$' || c == '_' || c.is_alphabetic()
+    if c.is_ascii() {
+        return c.is_ascii_alphabetic() || c == '$' || c == '_';
+    }
+    crate::id_unicode::is_valid_js_identifier_start(c as u32)
 }
 
 pub fn is_id_part(c: char) -> bool {
-    is_id_start(c) || c.is_alphanumeric() || c == '\u{200c}' || c == '\u{200d}'
+    if c.is_ascii() {
+        return c.is_ascii_alphanumeric() || c == '$' || c == '_';
+    }
+    c == '\u{200c}' || c == '\u{200d}' || is_id_start(c) || crate::id_unicode::is_valid_unicode_id(c as u32)
 }
 
 fn is_nl(c: char) -> bool {

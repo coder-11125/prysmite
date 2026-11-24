@@ -56,11 +56,29 @@ pub(crate) fn num_to_json(v: f64) -> Value {
     }
 }
 
+/// Exact value of a power-of-two-radix digit string, correctly rounded to the nearest double.
+fn radix_to_f64(digits: &str, radix: u32) -> Option<f64> {
+    let bits_per = radix.trailing_zeros() as usize;
+    let mut bits: Vec<bool> = Vec::with_capacity(digits.len() * bits_per);
+    for ch in digits.chars() {
+        let d = ch.to_digit(radix)?;
+        for i in (0..bits_per).rev() {
+            bits.push(d >> i & 1 == 1);
+        }
+    }
+    let Some(first) = bits.iter().position(|&b| b) else { return Some(0.0) };
+    let bits = &bits[first..];
+    if bits.len() <= 64 {
+        return Some(bits.iter().fold(0u64, |a, &b| a << 1 | b as u64) as f64);
+    }
+    let top = bits[..64].iter().fold(0u64, |a, &b| a << 1 | b as u64);
+    let sticky = bits[64..].iter().any(|&b| b) as u64;
+    Some((top | sticky) as f64 * 2f64.powi((bits.len() - 64) as i32))
+}
+
 pub(crate) fn number_value(raw: &str) -> Value {
     let s: String = raw.chars().filter(|c| *c != '_').collect();
-    let radix = |p: &str, r: u32| -> Option<f64> {
-        s.strip_prefix(p).and_then(|h| u64::from_str_radix(h, r).ok()).map(|x| x as f64)
-    };
+    let radix = |p: &str, r: u32| -> Option<f64> { s.strip_prefix(p).and_then(|h| radix_to_f64(h, r)) };
     let v = radix("0x", 16)
         .or_else(|| radix("0X", 16))
         .or_else(|| radix("0o", 8))
@@ -70,7 +88,7 @@ pub(crate) fn number_value(raw: &str) -> Value {
         .or_else(|| {
             // Legacy octal: 017
             if s.len() > 1 && s.starts_with('0') && s.bytes().all(|b| (b'0'..=b'7').contains(&b)) {
-                u64::from_str_radix(&s[1..], 8).ok().map(|x| x as f64)
+                radix_to_f64(&s[1..], 8)
             } else {
                 None
             }

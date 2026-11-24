@@ -977,7 +977,7 @@ impl<'a> Parser<'a> {
             } else if self.is("...") {
                 let dots = self.tok.start;
                 self.next()?;
-                if self.is("}") || self.is(",") || self.is(";") || self.is("|") {
+                if self.is("}") || self.is(",") || self.is(";") || (self.is("|") && self.src.as_bytes().get(self.tok.end) == Some(&b'}')) {
                     if class_like || in_interface {
                         return self.error("Explicit inexact syntax can only appear inside an object type", dots);
                     }
