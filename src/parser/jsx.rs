@@ -127,7 +127,7 @@ impl<'a> Parser<'a> {
         self.jsx_ws()?;
         let close_name = self.parse_jsx_name()?;
         if self.src[close_name.start..close_name.end] != name_text {
-            return self.error(format!("Expected corresponding JSX closing tag for <{}>", name_text), close_name.start);
+            return self.error(format!("Expected corresponding JSX closing tag for {}", name_text), close_name.start);
         }
         self.jsx_ws()?;
         self.jsx_expect_byte(b'>', "`>` closing the tag")?;

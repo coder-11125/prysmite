@@ -34,7 +34,7 @@ impl<'a> Parser<'a> {
         let check = self.parse_union_type();
         self.no_infer_bound = false;
         let check = check?;
-        if !self.is_kw("extends") {
+        if !self.is_kw("extends") || (self.opts.oxc_type_rules && self.tok.nl_before) {
             return Ok(check);
         }
         // Conditional type: `Check extends Extends ? True : False`
@@ -61,15 +61,15 @@ impl<'a> Parser<'a> {
 
     fn parse_union_type(&mut self) -> PResult<Node> {
         let start = self.tok.start;
-        self.eat("|")?; // optional leading bar
-        let first = self.parse_intersection()?;
+        let leading = self.eat("|")?; // optional leading bar
+        let first = self.with_fn_ctx(if leading { 1 } else { 0 }, |p| p.parse_intersection())?;
         if !self.at_union_bar() {
             return Ok(first);
         }
         let mut types = vec![first];
         while self.at_union_bar() {
             self.next()?;
-            types.push(self.parse_intersection()?);
+            types.push(self.with_fn_ctx(1, |p| p.parse_intersection())?);
         }
         Ok(self.node(start, Kind::UnionTypeAnnotation { types }))
     }
@@ -81,14 +81,14 @@ impl<'a> Parser<'a> {
 
     fn parse_intersection(&mut self) -> PResult<Node> {
         let start = self.tok.start;
-        self.eat("&")?;
-        let first = self.parse_prefix_type()?;
+        let leading = self.eat("&")?;
+        let first = if leading { self.with_fn_ctx(2, |p| p.parse_prefix_type())? } else { self.parse_prefix_type()? };
         if !self.is("&") {
             return Ok(first);
         }
         let mut types = vec![first];
         while self.eat("&")? {
-            types.push(self.parse_prefix_type()?);
+            types.push(self.with_fn_ctx(2, |p| p.parse_prefix_type())?);
         }
         Ok(self.node(start, Kind::IntersectionTypeAnnotation { types }))
     }
@@ -118,13 +118,13 @@ impl<'a> Parser<'a> {
         let start = self.tok.start;
         if self.is("?") {
             self.next()?;
-            let inner = self.parse_prefix_operand()?;
+            let inner = self.with_fn_ctx(0, |p| p.parse_prefix_operand())?;
             return Ok(self.node(start, Kind::NullableTypeAnnotation { type_annotation: Box::new(inner) }));
         }
         if self.is("??") {
             // `??T` is lexed as one token: nullable of nullable.
             self.next()?;
-            let inner = self.parse_prefix_operand()?;
+            let inner = self.with_fn_ctx(0, |p| p.parse_prefix_operand())?;
             let mid = Node::new(
                 Kind::NullableTypeAnnotation { type_annotation: Box::new(inner.clone()) },
                 start + 1,
@@ -155,7 +155,11 @@ impl<'a> Parser<'a> {
                     if op.starts_with("renders") && op.len() > 7 {
                         self.next()?; // the `?` / `*`
                     }
-                    let arg = self.parse_prefix_operand()?;
+                    let arg = if matches!(op.as_str(), "keyof" | "readonly") {
+                        self.with_fn_ctx(3, |p| p.parse_prefix_operand())?
+                    } else {
+                        self.parse_prefix_operand()?
+                    };
                     return Ok(self.node(
                         start,
                         if op == "keyof" {
@@ -197,6 +201,7 @@ impl<'a> Parser<'a> {
     fn parse_anon_fn_type(&mut self, t: Node, start: usize) -> PResult<Node> {
         if self.is("=>") && !self.no_anon_fn_type {
             self.next()?;
+            self.oxc_anon_param(t.start)?;
             let ret = self.parse_return_type()?;
             let param = Node::new(
                 Kind::FunctionTypeParam { name: None, type_annotation: Box::new(t.clone()), optional: false },
@@ -215,6 +220,23 @@ impl<'a> Parser<'a> {
             ));
         }
         Ok(t)
+    }
+
+    /// oxc rules: function type parameters must be named.
+    fn oxc_anon_param(&mut self, pos: usize) -> PResult<()> {
+        if self.opts.oxc_type_rules {
+            self.early("Missing a name on this function type parameter. Write it as `name: Type`.", pos)?;
+        }
+        Ok(())
+    }
+
+    /// Run `f` with the oxc function-type-parenthesization context set to `ctx`
+    /// (0 none, 1 union, 2 intersection, 3 type operator).
+    fn with_fn_ctx<T>(&mut self, ctx: u8, f: impl FnOnce(&mut Self) -> PResult<T>) -> PResult<T> {
+        let saved = std::mem::replace(&mut self.fn_ctx, ctx);
+        let r = f(self);
+        self.fn_ctx = saved;
+        r
     }
 
     fn parse_postfix_type(&mut self) -> PResult<Node> {
@@ -249,6 +271,27 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_primary_type(&mut self) -> PResult<Node> {
+        let start = self.tok.start;
+        let t = self.parse_primary_type_inner()?;
+        if self.opts.oxc_type_rules && self.fn_ctx != 0 && t.start == start {
+            let name = match &t.kind {
+                Kind::FunctionTypeAnnotation { .. } => Some("Function"),
+                Kind::ConstructorTypeAnnotation { .. } => Some("Constructor"),
+                _ => None,
+            };
+            if let Some(name) = name {
+                let place = match self.fn_ctx {
+                    1 => "in a union type",
+                    2 => "in an intersection type",
+                    _ => "as the operand of a type operator",
+                };
+                self.early(&format!("{name} type notation must be parenthesized when used {place}."), start)?;
+            }
+        }
+        Ok(t)
+    }
+
+    fn parse_primary_type_inner(&mut self) -> PResult<Node> {
         let start = self.tok.start;
         match self.tok.tok.clone() {
             Tok::Punct("(") => self.parse_paren_or_fn_type(),
@@ -288,13 +331,13 @@ impl<'a> Parser<'a> {
                     let bigint = format!("-{}", crate::ast::bigint_to_decimal(&d));
                     return Ok(self.node(start, Kind::BigIntLiteralTypeAnnotation { value: Value::Null, bigint, raw }));
                 }
-                self.unexpected()
+                self.unexpected_expecting("a type")
             }
             Tok::Str(s) => {
                 self.next()?;
                 let raw = self.src[start..self.prev_end].to_string();
                 if has_legacy_octal_escape(&raw) {
-                    self.early("Octal escape sequences are not allowed in strict mode.", start)?;
+                    self.early("Octal literals are not allowed in strict mode.", start)?;
                 }
                 Ok(self.node(start, Kind::StringLiteralTypeAnnotation { value: s, raw }))
             }
@@ -462,7 +505,7 @@ impl<'a> Parser<'a> {
                             }
                         }
                         let type_parameters =
-                            if self.is("<") || self.is("<<") { Some(Box::new(self.parse_type_args()?)) } else { None };
+                            if (self.is("<") || self.is("<<")) && !(self.opts.oxc_type_rules && self.tok.nl_before) { Some(Box::new(self.parse_type_args()?)) } else { None };
                         Ok(self.node(
                             start,
                             Kind::GenericTypeAnnotation { id: Box::new(id), type_arguments: type_parameters },
@@ -470,7 +513,7 @@ impl<'a> Parser<'a> {
                     }
                 }
             }
-            _ => self.unexpected(),
+            _ => self.unexpected_expecting("a type"),
         }
     }
 
@@ -677,6 +720,7 @@ impl<'a> Parser<'a> {
             ))
         } else {
             let t = self.parse_type()?;
+            self.oxc_anon_param(t.start)?;
             Ok(self.node(start, Kind::FunctionTypeParam { name: None, type_annotation: Box::new(t), optional: false }))
         }
     }
@@ -688,6 +732,7 @@ impl<'a> Parser<'a> {
         let mut rest = None;
         let mut this_param = None;
         if let Some(t) = first {
+            self.oxc_anon_param(t.start)?;
             params.push(Node::new(
                 Kind::FunctionTypeParam { name: None, type_annotation: Box::new(t.clone()), optional: false },
                 t.start,
@@ -1172,6 +1217,9 @@ impl<'a> Parser<'a> {
                                 if proto {
                                     return self.error("Unexpected proto modifier", mstart);
                                 }
+                                if self.opts.oxc_type_rules && id.is_none() {
+                                    self.early("Missing a name on this indexer key. Write it as `[name: Type]`.", key.start)?;
+                                }
                                 let optional = self.eat("?")?;
                                 self.expect(":")?;
                                 let value = self.parse_type()?;
@@ -1238,6 +1286,13 @@ impl<'a> Parser<'a> {
                             }
                             if kind == "set" && (params.len() != 1 || rest.is_some()) {
                                 self.early("Setter should have exactly one parameter", mstart)?;
+                            }
+                            if kind == "set" && self.opts.oxc_type_rules {
+                                if let [p] = params.as_slice() {
+                                    if matches!(p.kind, Kind::FunctionTypeParam { optional: true, .. }) {
+                                        self.early("A setter cannot have an optional parameter.", p.start)?;
+                                    }
+                                }
                             }
                             if kind != "init" && this_param.is_some() {
                                 self.early(
@@ -1326,9 +1381,18 @@ impl<'a> Parser<'a> {
                 }
             }
 
+            if self.opts.oxc_type_rules && self.is(",") {
+                let is_mapped = matches!(properties.last().map(|p| &p.kind), Some(Kind::ObjectTypeMappedTypeProperty { .. }));
+                if class_like {
+                    self.early("Unexpected `,` between class members, expected `;` or a line break", self.tok.start)?;
+                } else if is_mapped {
+                    self.early("Unexpected `,` after a mapped type, expected `;` or `}`", self.tok.start)?;
+                }
+            }
             if !self.eat(",")? && !self.eat(";")? {
                 let closing = if exact { self.is("|") } else { self.is("}") };
-                if !closing {
+                // oxc rules: a line break is an implicit semicolon.
+                if !closing && !(self.opts.oxc_type_rules && (self.tok.nl_before || self.is_eof())) {
                     return self.unexpected();
                 }
             }

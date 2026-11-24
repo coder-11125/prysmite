@@ -90,6 +90,7 @@ fn parse_args() -> Result<Args, String> {
             "--no-decorators" => a.opts.decorators = false,
             "--no-enums" => a.opts.enums = false,
             "--es-extras" => a.opts.es_extras = true,
+            "--oxc-type-rules" => a.opts.oxc_type_rules = true,
             "--comment-types" => a.opts.comment_types = true,
             "--max-depth" => match it.next().and_then(|n| n.parse().ok()) {
                 Some(n) => a.opts.max_depth = n,

@@ -43,6 +43,11 @@ pub struct ParseOptions {
     /// (`export { a as "x" }`), private brand checks (`#x in obj`) and JSX elements as
     /// attribute values (`<A b=<c /> />`).
     pub es_extras: bool,
+    /// Flow's optional stricter rules for type syntax shared with TypeScript (Flow's
+    /// `oxc_type_feature_parser_rules`): named function type parameters, parenthesized function
+    /// types in unions/intersections/type operators, line-terminator separators and
+    /// TypeScript's same-line rules for `extends` and type arguments.
+    pub oxc_type_rules: bool,
 }
 
 impl Default for ParseOptions {
@@ -58,6 +63,7 @@ impl Default for ParseOptions {
             decorators: true,
             enums: true,
             es_extras: false,
+            oxc_type_rules: false,
             comment_types: false,
         }
     }
@@ -201,6 +207,7 @@ pub(crate) struct Snapshot {
     no_in: bool,
     no_ret_type: bool,
     no_anon_fn_type: bool,
+    fn_ctx: u8,
     depth: usize,
 }
 
@@ -218,6 +225,8 @@ pub struct Parser<'a> {
     pub(crate) no_ret_type: bool,
     /// Disallow `T => U` without parens (arrow return types).
     pub(crate) no_anon_fn_type: bool,
+    /// Function-type parenthesization context for the oxc rules (0 none, 1 union, 2 intersection, 3 type operator).
+    pub(crate) fn_ctx: u8,
     /// Decorators parsed before a class, to be attached by `parse_class`.
     pub(crate) pending_decorators: Vec<Node>,
     /// Decorators written before `export`/statement start are outside the class range.
@@ -291,6 +300,7 @@ impl<'a> Parser<'a> {
             no_in: false,
             no_ret_type: false,
             no_anon_fn_type: false,
+            fn_ctx: 0,
             pending_decorators: Vec::new(),
             decorators_outside: false,
             inner_decorator_start: None,
@@ -401,6 +411,7 @@ impl<'a> Parser<'a> {
             no_in: self.no_in,
             no_ret_type: self.no_ret_type,
             no_anon_fn_type: self.no_anon_fn_type,
+            fn_ctx: self.fn_ctx,
             depth: self.depth,
         }
     }
@@ -421,6 +432,7 @@ impl<'a> Parser<'a> {
         self.no_in = s.no_in;
         self.no_ret_type = s.no_ret_type;
         self.no_anon_fn_type = s.no_anon_fn_type;
+        self.fn_ctx = s.fn_ctx;
         self.depth = s.depth;
     }
 
@@ -473,12 +485,27 @@ impl<'a> Parser<'a> {
         Node::new(kind, start, self.prev_end)
     }
 
+    /// Flow's description of the current token: `number`, `string`, `identifier`, `end of input`
+    /// or ``token `x` ``.
+    pub(crate) fn describe_token(&self) -> String {
+        match &self.tok.tok {
+            Tok::Eof => "end of input".to_string(),
+            Tok::Num(_) | Tok::BigInt(_) => "number".to_string(),
+            Tok::Str(_) => "string".to_string(),
+            Tok::Regex { .. } => "regexp".to_string(),
+            Tok::Ident(w) if !is_flow_keyword_token(w) => "identifier".to_string(),
+            Tok::Private(_) => "identifier".to_string(),
+            _ => format!("token `{}`", &self.src[self.tok.start..self.tok.end]),
+        }
+    }
+
     pub(crate) fn unexpected<T>(&self) -> PResult<T> {
-        let msg = match &self.tok.tok {
-            Tok::Eof => "Unexpected end of input".to_string(),
-            _ => format!("Unexpected token `{}`", &self.src[self.tok.start..self.tok.end]),
-        };
-        Err(ParseError::new(msg, self.tok.start))
+        Err(ParseError::new(format!("Unexpected {}", self.describe_token()), self.tok.start))
+    }
+
+    /// `Unexpected <token>, expected <what>` (Flow's wording).
+    pub(crate) fn unexpected_expecting<T>(&self, what: &str) -> PResult<T> {
+        Err(ParseError::new(format!("Unexpected {}, expected {}", self.describe_token(), what), self.tok.start))
     }
 
     pub(crate) fn error<T>(&self, msg: impl Into<String>, pos: usize) -> PResult<T> {
@@ -528,18 +555,7 @@ impl<'a> Parser<'a> {
         if self.is(p) {
             self.next()
         } else {
-            self.error(
-                format!(
-                    "Expected `{}` but found {}",
-                    p,
-                    if self.is_eof() {
-                        "end of input".to_string()
-                    } else {
-                        format!("`{}`", &self.src[self.tok.start..self.tok.end])
-                    }
-                ),
-                self.tok.start,
-            )
+            self.unexpected_expecting(&format!("the token `{p}`"))
         }
     }
 
@@ -556,7 +572,16 @@ impl<'a> Parser<'a> {
         if self.eat(";")? || self.is("}") || self.is_eof() || self.tok.nl_before {
             Ok(())
         } else {
-            self.unexpected()
+            self.unexpected_expecting("the token `;`")
+        }
+    }
+
+    /// `;` after an expression statement (Flow words this error differently).
+    pub(crate) fn expr_semicolon(&mut self) -> PResult<()> {
+        if self.eat(";")? || self.is("}") || self.is_eof() || self.tok.nl_before {
+            Ok(())
+        } else {
+            self.unexpected_expecting("the end of an expression statement (`;`)")
         }
     }
 
@@ -566,7 +591,7 @@ impl<'a> Parser<'a> {
     pub(crate) fn parse_ident(&mut self) -> PResult<Node> {
         if let Tok::Ident(name) = &self.tok.tok {
             if is_reserved(name) {
-                return self.unexpected();
+                return self.unexpected_expecting("an identifier");
             }
             let name = name.clone();
             let start = self.tok.start;
@@ -574,7 +599,7 @@ impl<'a> Parser<'a> {
             self.next()?;
             return Ok(self.node(start, Kind::Identifier { name, type_annotation: None, optional: false }));
         }
-        self.unexpected()
+        self.unexpected_expecting("an identifier")
     }
 
     /// Context-dependent restrictions on identifier references and bindings.
@@ -602,7 +627,7 @@ impl<'a> Parser<'a> {
             self.next()?;
             return Ok(self.node(start, Kind::Identifier { name, type_annotation: None, optional: false }));
         }
-        self.unexpected()
+        self.unexpected_expecting("an identifier")
     }
 
     /// Is the current token an identifier (not reserved)?
@@ -785,4 +810,17 @@ impl<'a> Parser<'a> {
             }
         }
     }
+}
+
+/// Words Flow's lexer turns into keyword tokens (reported as ``token `x` ``, not `identifier`).
+pub(crate) fn is_flow_keyword_token(w: &str) -> bool {
+    matches!(
+        w,
+        "static" | "true" | "typeof" | "void" | "async" | "await" | "break" | "case" | "catch" | "class"
+            | "const" | "continue" | "debugger" | "declare" | "default" | "delete" | "do" | "else" | "enum"
+            | "export" | "extends" | "false" | "finally" | "for" | "function" | "if" | "implements" | "import"
+            | "in" | "instanceof" | "interface" | "let" | "match" | "record" | "new" | "null" | "of" | "opaque"
+            | "package" | "private" | "protected" | "public" | "return" | "super" | "switch" | "this"
+            | "throw" | "try" | "type" | "var" | "while" | "with" | "yield"
+    )
 }

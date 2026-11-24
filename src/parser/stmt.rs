@@ -444,7 +444,7 @@ impl<'a> Parser<'a> {
     fn parse_expression_statement(&mut self) -> PResult<Node> {
         let start = self.tok.start;
         let expression = self.parse_expression()?;
-        self.semicolon()?;
+        self.expr_semicolon()?;
         Ok(self.node(start, Kind::ExpressionStatement { expression: Box::new(expression), directive: None }))
     }
 
@@ -676,7 +676,7 @@ impl<'a> Parser<'a> {
             }
             let init = if self.eat("=")? { Some(Box::new(self.parse_assign()?)) } else { None };
             if definite && init.is_some() {
-                self.early("Declarations with initializers cannot also have definite assignment assertions", start)?;
+                self.early("Declarations with initializers cannot also have definite assignment assertions.", start)?;
             }
             decls.push(self.node(start, Kind::VariableDeclarator { id: Box::new(id), init, definite }));
             if !self.eat(",")? {
@@ -939,7 +939,7 @@ impl<'a> Parser<'a> {
                     self.node(s, Kind::RestElement { argument: Box::new(argument), type_annotation: None }),
                 ));
                 if !self.is("]") {
-                    self.early("Rest element must be last element", s)?;
+                    self.early("Rest element must be final element of an array pattern", s)?;
                 }
             } else {
                 // Flow tolerates annotations on destructured elements: `[a: T, b: U]`.
@@ -975,7 +975,7 @@ impl<'a> Parser<'a> {
                 properties
                     .push(self.node(pstart, Kind::RestElement { argument: Box::new(argument), type_annotation: None }));
                 if self.is(",") {
-                    self.early("Rest element must be last element", pstart)?;
+                    self.early("Rest element must be final element of an array pattern", pstart)?;
                 }
             } else {
                 let (key, computed) = self.parse_prop_key()?;
@@ -1364,13 +1364,13 @@ impl<'a> Parser<'a> {
         }
         if !is_static && key_name.as_deref() == Some("constructor") {
             if !is_method_next {
-                self.early("Classes may not have a field named `constructor`", key.start)?;
+                self.early("Classes may not have fields named `constructor`", key.start)?;
             } else {
                 if is_async {
-                    self.early("Constructor can't be an async function", key.start)?;
+                    self.early("Constructor can't be an async function.", key.start)?;
                 }
                 if generator {
-                    self.early("Constructor can't be a generator", key.start)?;
+                    self.early("Constructor can't be a generator.", key.start)?;
                 }
                 if kind != "method" {
                     self.early("Constructor can't have get/set modifier", key.start)?;
@@ -1381,7 +1381,7 @@ impl<'a> Parser<'a> {
         if is_abstract && (self.is("(") || self.is("<")) {
             // `abstract m(): void;` — a signature, typed like a function type.
             if !in_abstract {
-                return self.error("Abstract methods can only appear within an abstract class", start);
+                return self.error("Abstract methods can only appear within an abstract class.", start);
             }
             let vstart = self.tok.start;
             let tp = if self.is("<") { Some(Box::new(self.parse_type_params()?)) } else { None };
@@ -1402,7 +1402,7 @@ impl<'a> Parser<'a> {
         }
         if is_abstract {
             if !in_abstract {
-                return self.error("Abstract properties can only appear within an abstract class", start);
+                return self.error("Abstract properties can only appear within an abstract class.", start);
             }
             let type_annotation = if self.is(":") { Some(Box::new(self.parse_type_annotation()?)) } else { None };
             self.semicolon()?;
@@ -2213,9 +2213,9 @@ impl<'a> Parser<'a> {
                     _ => Ok(()),
                 }
             }
-            None if kw == "break" && self.breakable_depth == 0 => self.early("Illegal break statement", pos),
+            None if kw == "break" && self.breakable_depth == 0 => self.early("Illegal break statement.", pos),
             None if kw == "continue" && self.loop_depth == 0 => {
-                self.early("Illegal continue statement: no surrounding iteration statement", pos)
+                self.early("Illegal continue statement", pos)
             }
             None => Ok(()),
         }

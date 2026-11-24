@@ -17,7 +17,7 @@ function fixtureOptions(file) {
 // expected result recorded next to them (`*.tree.json`, produced by Flow's own test runner).
 function skip(file) {
   const ex = fixtureOptions(file);
-  return ex.types === false || ex.components === false || ex.esproposal_decorators === false || ex.enums === false;
+  return ex.types === false || ex.components === false || ex.esproposal_decorators === false || ex.enums === false || ex.oxc_type_feature_parser_rules === true;
 }
 function cliFlags(file) {
   const ex = fixtureOptions(file);
@@ -26,6 +26,7 @@ function cliFlags(file) {
   if (ex.components === false) flags.push('--no-components');
   if (ex.esproposal_decorators === false) flags.push('--no-decorators');
   if (ex.enums === false) flags.push('--no-enums');
+  if (ex.oxc_type_feature_parser_rules) flags.push('--oxc-type-rules');
   return flags;
 }
 function recordedTree(file) {

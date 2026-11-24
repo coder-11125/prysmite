@@ -467,8 +467,46 @@ impl<'a> Parser<'a> {
                 if no_call {
                     break;
                 }
-                in_chain = true;
                 self.next()?;
+                if self.is("<") && self.opts.types {
+                    // `a?.<T>(x)`. Flow consumes the `?.` and, when the type arguments
+                    // aren't followed by `(`, leaves `<` to the binary-operator loop
+                    // (so `o.m?.<T>e` is `o.m < T > e`, with no optional chain).
+                    let snap = self.snapshot();
+                    match self.parse_type_args() {
+                        Ok(targs) if self.is("(") => {
+                            in_chain = true;
+                            let arguments = self.parse_args()?;
+                            base = self.node(
+                                start,
+                                Kind::CallExpression {
+                                    callee: Box::new(base),
+                                    arguments,
+                                    type_arguments: Some(Box::new(targs)),
+                                    optional: true,
+                                },
+                            );
+                            continue;
+                        }
+                        Ok(targs) if self.is("`") => {
+                            let quasi = self.parse_template()?;
+                            base = self.node(
+                                start,
+                                Kind::TaggedTemplateExpression {
+                                    tag: Box::new(base),
+                                    quasi: Box::new(quasi),
+                                    type_arguments: Some(Box::new(targs)),
+                                },
+                            );
+                            continue;
+                        }
+                        _ => {
+                            self.restore(snap);
+                            break;
+                        }
+                    }
+                }
+                in_chain = true;
                 if self.is("(") || self.is("<") {
                     let type_arguments = if self.is("<") { Some(Box::new(self.parse_type_args()?)) } else { None };
                     let arguments = self.parse_args()?;
@@ -502,6 +540,12 @@ impl<'a> Parser<'a> {
                 let snap = self.snapshot();
                 match self.parse_type_args() {
                     Ok(targs) if self.is("`") => {
+                        if in_chain {
+                            // Flow ends the chain here: the chain is the tag.
+                            let end = base.end;
+                            base = Node::new(Kind::ChainExpression { expression: Box::new(base) }, start, end);
+                            in_chain = false;
+                        }
                         let quasi = self.parse_template()?;
                         base = self.node(
                             start,

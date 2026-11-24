@@ -553,7 +553,7 @@ fn private_brand_checks() {
     assert!(parse_with("const x = #x in obj;", &opts).is_err());
     ast_extras("class A { #x; static has(o) { return !(#x in o) && #x in o; } }");
     // A bare `#x` is still an error.
-    assert!(err("const a = #x;").message.contains("Unexpected token"));
+    assert!(err("const a = #x;").message.starts_with("Unexpected"));
 }
 
 // ─────────────────────────────── JSX ──────────────────────────────
@@ -628,7 +628,7 @@ fn error_messages_and_positions() {
     assert!(err("<a></b>").message.contains("closing tag"));
     assert!(err("1 = 2").message.contains("Invalid assignment target"));
     assert!(err("a +").message.contains("end of input"));
-    assert!(err("let [a = 1;").message.contains("Expected"));
+    assert!(err("let [a = 1;").message.contains("expected"));
     assert!(err("try {}").message.contains("catch or finally"));
     assert!(err("3in x").message.contains("directly after number"));
 }

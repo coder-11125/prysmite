@@ -34,7 +34,7 @@ fn rejects(src: &str, expect: &str) {
 #[test]
 fn break_and_continue_targets() {
     rejects("break;", "Illegal break statement");
-    rejects("continue;", "no surrounding iteration statement");
+    rejects("continue;", "Illegal continue statement");
     rejects("while (1) { function f() { break; } }", "Illegal break statement");
     rejects("a: { continue a; }", "does not denote an iteration statement");
     rejects("while (1) { break nope; }", "Undefined label 'nope'");
@@ -80,7 +80,7 @@ fn accessors_and_constructors() {
     rejects("class A { async constructor() {} }", "Constructor can't be an async function");
     rejects("class A { *constructor() {} }", "Constructor can't be a generator");
     rejects("class A { get constructor() {} }", "get/set modifier");
-    rejects("class A { constructor = 1 }", "field named `constructor`");
+    rejects("class A { constructor = 1 }", "fields named `constructor`");
     rejects("class A { static prototype() {} }", "static property named `prototype`");
     ok("class A { get x() { return 1 } set x(v) {} static constructor() {} static x = 1 }");
     ok("({ get x() { return 1 }, set x(v) {} })");
@@ -91,7 +91,7 @@ fn rest_must_be_last() {
     rejects("function f(...a, b) {}", "Rest parameter must be final");
     // Arrow heads are parsed speculatively, so this one is just a syntax error.
     assert!(!msg("(...a, b) => 1").is_empty());
-    rejects("let [...a, b] = c;", "Rest element must be last");
+    rejects("let [...a, b] = c;", "Rest element must be final element of an array pattern");
     ok("function f(a, ...b) {} (a, ...b) => 1; let [a, ...b] = c;");
 }
 
