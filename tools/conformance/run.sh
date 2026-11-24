@@ -30,5 +30,15 @@ node comments-diff.js /tmp/prysmite-fixtures.txt
 # few known places (extra fields like `literalType`, a handful of range quirks).
 echo "== fixtures with recorded Flow trees (comment types on)"
 TOP=8 node astdiff.js /tmp/prysmite-fixtures.txt --trees --ranges | head -20 || true
+echo "== Flow's own parser, run live with each fixture's options (needs oracle/build.sh)"
+ORACLE="${ORACLE:-/tmp/prysmite-oracle/target/release/oracle}"
+if [ ! -x "$ORACLE" ]; then ./oracle/build.sh "$FLOW_REPO" "$(dirname "$(dirname "$(dirname "$ORACLE")")")" >/dev/null; fi
+export ORACLE ORACLE_BIN="$ORACLE"
+node oracle-cmp.js /tmp/prysmite-fixtures.txt --show 3 | head -12
+echo "-- native trees incl. ranges"
+TOP=8 node astdiff.js /tmp/prysmite-fixtures.txt --oracle --ranges | head -12
+echo "-- comment interning (experimental)"
+grep -l intern_comments "$FLOW_REPO"/src/parser/test/flow/*/*.options.json | sed 's/.options.json/.js/' > /tmp/prysmite-intern.txt
+node comments-attach.js /tmp/prysmite-intern.txt | tail -1
 echo "== mutation fuzzing (2000 mutants)"
 node fuzz.js /tmp/prysmite-fixtures.txt 2000 1 || true

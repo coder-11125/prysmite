@@ -30,7 +30,7 @@ OPTIONS:
         --flow-native report Flow's native tree flavor (no Babel-compatible extras, native ranges)
         --utf16       report offsets in UTF-16 code units (JavaScript string indices), not bytes
     -e, --eval CODE   parse CODE instead of reading a file
-        --max-depth N maximum nesting depth (default 512)
+        --max-depth N maximum nesting depth (default 4096 here; 512 for the library)
     -h, --help        show this help
     -V, --version     show the version
 
@@ -63,7 +63,7 @@ fn parse_args() -> Result<Args, String> {
         inputs: vec![],
         check: false,
         pretty: None,
-        opts: ParseOptions::default(),
+        opts: ParseOptions { max_depth: 4096, ..ParseOptions::default() },
         no_loc: false,
         utf16: false,
         recover: false,

@@ -339,3 +339,21 @@ fn random_garbage_terminates_without_panic() {
         }
     });
 }
+
+/// The default library limit must be safe on an 4 MiB thread stack: past it the error is
+/// clean, not a stack overflow.
+#[test]
+fn default_depth_limit_is_safe_on_a_small_stack() {
+    let h = std::thread::Builder::new()
+        .stack_size(4 << 20)
+        .spawn(|| {
+            let src = format!("{}{}", "[".repeat(150), "]".repeat(150));
+            assert!(prysmite::parse(&src).is_ok());
+            let src = format!("{}{}", "[".repeat(100_000), "]".repeat(100_000));
+            assert!(prysmite::parse(&src).is_err());
+            let src = format!("type T = {}number{}", "Array<".repeat(100_000), ">".repeat(100_000));
+            assert!(prysmite::parse(&src).is_err());
+        })
+        .unwrap();
+    h.join().unwrap();
+}

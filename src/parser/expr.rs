@@ -952,7 +952,7 @@ impl<'a> Parser<'a> {
             let f = self.parse_fn_tail(is_async, generator);
             self.super_ok = saved_super_ok;
             let f = f?;
-            self.check_accessor_params(kind, &f.params, kstart)?;
+            self.check_accessor_params(kind, &f.params, key.start)?;
             let value = self.node(
                 kstart,
                 Kind::FunctionExpression {

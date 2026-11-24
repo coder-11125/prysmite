@@ -5,7 +5,7 @@
 const fs = require('fs'), cp = require('child_process'), path = require('path');
 const { fixtureOptions, cliFlags } = require('./opts');
 const BIN = process.env.PRYSMITE_BIN || path.resolve(__dirname, '../../target/release/prysmite');
-const ORACLE = process.env.ORACLE || '/tmp/oracle/target/release/oracle';
+const ORACLE = process.env.ORACLE || '/tmp/prysmite-oracle/target/release/oracle';
 const args = process.argv.slice(3);
 const show = args.includes('--show') ? +args[args.indexOf('--show') + 1] : 5;
 const recover = args.includes('--recover');

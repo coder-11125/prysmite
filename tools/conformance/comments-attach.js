@@ -7,7 +7,19 @@ const { fixtureOptions, cliFlags, recordedTree } = require('./opts');
 const BIN = process.env.PRYSMITE_BIN || require('path').resolve(__dirname, '../../target/release/prysmite');
 const verbose = process.argv.includes('--verbose');
 const only = process.argv.includes('--only') ? process.argv[process.argv.indexOf('--only') + 1] : null;
-const files = fs.readFileSync(process.argv[2], 'utf8').split('\n').filter((f) => f && fs.existsSync(f) && fixtureOptions(f).intern_comments);
+const LIVE = process.argv.includes('--oracle'); // run Flow's parser live with interning forced on
+const ORACLE = process.env.ORACLE || '/tmp/prysmite-oracle/target/release/oracle';
+const limit = process.argv.includes('--limit') ? +process.argv[process.argv.indexOf('--limit') + 1] : 1e9;
+const files = fs.readFileSync(process.argv[2], 'utf8').split('\n').filter((f) => f && fs.existsSync(f) && (LIVE || fixtureOptions(f).intern_comments)).slice(0, limit);
+function liveTree(f) {
+  const o = f.replace(/\.js$/, '.options.json');
+  const opts = o !== f && fs.existsSync(o) ? JSON.parse(fs.readFileSync(o, 'utf8')) : null;
+  if (opts === null) { /* no options file: Flow's defaults, which the oracle only applies when given none */ }
+  const tmp = '/tmp/prysmite-ic-opts.json';
+  fs.writeFileSync(tmp, JSON.stringify({ ...(opts || { components: true, enums: true, pattern_matching: true, records: true, esproposal_decorators: true }), intern_comments: true }));
+  const r = cp.spawnSync(ORACLE, [f, tmp], { encoding: 'utf8', maxBuffer: 1 << 30 });
+  try { return JSON.parse(r.stdout); } catch (e) { return null; }
+}
 function collect(t, out) {
   const walk = (x) => {
     if (Array.isArray(x)) return x.forEach(walk);
@@ -31,10 +43,10 @@ let nfiles = 0, okfiles = 0, nodes = 0, okNodes = 0, rejected = 0;
 const bad = [];
 for (const f of files) {
   if (only && !f.includes(only)) continue;
-  const t = recordedTree(f);
+  const t = LIVE ? liveTree(f) : recordedTree(f);
   if (!t || (t.errors && t.errors.length)) continue;
   nfiles++;
-  const r = cp.spawnSync(BIN, ['-m', '--utf16', '--intern-comments', '--comment-types', '--es-extras', ...cliFlags(f), f], { encoding: 'utf8', maxBuffer: 1 << 30 });
+  const r = cp.spawnSync(BIN, ['-m', '--utf16', '--intern-comments', '--flow-native', '--comment-types', '--es-extras', ...cliFlags(f), f], { encoding: 'utf8', maxBuffer: 1 << 30 });
   if (r.status !== 0) { rejected++; bad.push([f, 'REJECTED ' + r.stderr.split('\n')[0]]); continue; }
   const a = {}, b = {};
   collect(t, a);

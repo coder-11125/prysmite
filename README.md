@@ -39,10 +39,13 @@ echo 'type A = number' | ./target/release/prysmite -
 | `--top-level-await` | Parse `await` at the top level as an operator (off by default, as in Flow's parser) |
 | `--allow-return-outside-function` | Accept top-level `return` |
 | `--es-extras` | Accept syntax Flow's parser lacks: string export names, `#x in obj`, JSX elements as attribute values |
+| `--oxc-type-rules` | Flow's optional stricter rules for type syntax shared with TypeScript (`oxc_type_feature_parser_rules`) |
+| `--intern-comments` | Attach comments to nodes as `leadingComments`/`trailingComments`, the way Flow does (experimental, see below) |
+| `--flow-native` | Print Flow's native tree flavor instead of the npm package's Babel-compatible one |
 | `--comment-types` | Parse Flow comment types: `/*: T */`, `/*:: code */`, `/*flow-include code */` |
 | `--no-loc` | Drop `start`/`end` offsets from the output |
 | `--utf16` | Report offsets as UTF-16 code units (JavaScript string indices) instead of bytes |
-| `--max-depth N` | Nesting limit (default 512) |
+| `--max-depth N` | Nesting limit (default 4096 in the CLI, 512 in the library) |
 | `-e CODE` | Parse `CODE` instead of a file |
 
 Exit codes: `0` ok, `1` syntax error, `2` usage/I-O error.
@@ -64,10 +67,14 @@ assert_eq!(r.errors.len(), 1);
 ```
 
 `ParseOptions` has `jsx`, `max_depth`, `early_errors`, `types`, `components`, `enums`,
-`decorators` (all on by default, `max_depth` 512) and the opt-ins `top_level_await`,
-`allow_return_outside_function`, `es_extras` and `comment_types`.
-Recursive descent needs stack proportional to nesting depth; the CLI runs on a
-large-stack thread, and library users who raise `max_depth` should too.
+`decorators` (all on by default, `max_depth` 2048) and the opt-ins `top_level_await`,
+`allow_return_outside_function`, `es_extras`, `comment_types`, `oxc_type_rules` and `native_ranges`.
+Comment interning is `prysmite::comments::intern_comments(&mut json, src)` on the serialized tree, and
+`to_native_flavor` rewrites the npm flavor into Flow's native one (use it with `native_ranges`).
+Recursive descent needs stack proportional to nesting depth (roughly 4 KiB per level of nesting, and
+a level costs two or three units of `max_depth`): the default library limit of 512 is safe on a 4 MiB
+stack, the CLI runs on a 256 MiB thread with a limit of 4096, and library users who raise `max_depth`
+should use a large-stack thread too.
 
 ## What it parses
 
@@ -165,43 +172,55 @@ The AST follows the shapes produced by the reference
 quirks included, and is checked against it. Reproduce everything with
 `tools/conformance/run.sh`.
 
+Two references are used. The npm package only understands a few `enable*` switches. So the harness also
+builds **Flow's own Rust parser** (`rust_port/crates/flow_parser` in `facebook/flow`, pinned to the same
+revision as the fixtures; `tools/conformance/oracle/build.sh`) and runs it live with each fixture's real
+options, which also gives Flow's native trees, error messages and interned comments.
+
 | Check | Result |
 |---|---|
-| Flow's own fixtures (6,982 files from `facebook/flow`): accept/reject agreement | **100 %** (6,233 accepted by both, 749 rejected by both) |
-| …AST structure on the 6,230 files both accept | **100 %** identical |
-| …including every node's source range | **100 %** identical |
-| Real-world JS (18,039 files from `node_modules`): accept/reject agreement | **100 %** (18,013 accepted by both, 26 rejected by both) |
-| Mutation fuzzing against `flow-parser` (token deletions, swaps, insertions; `tools/conformance/fuzz.js`) | about 99.9 % accept/reject agreement; the remaining disagreements are on corrupted rare syntax |
+| Flow's own fixtures (6,982 files from `facebook/flow`) vs the npm package: accept/reject agreement | **100 %** (6,225 accepted by both, 757 rejected by both) |
+| …AST structure and every node's source range, npm flavor | **100 %** of the 6,221 files both accept |
+| Same fixtures vs Flow's Rust parser, each fixture's own options (`types`, `enums`, `components`, `oxc_type_feature_parser_rules`, …): accept/reject | **100 %** (6,217 / 761) |
+| …`--flow-native` trees including ranges, vs Flow's Rust parser | **100 %** of the 6,217 files both accept |
+| Real Flow code: 2,717 files from React Native (`packages/`) and Metro, accept/reject vs Flow's Rust parser | **100 %** |
+| …`--flow-native` trees including ranges | **100 %** (2,715 files both accept) |
+| Real-world JS (18,039 files from `node_modules`) vs the npm package: accept/reject | **100 %** (18,013 accepted by both, 26 rejected by both) |
+| Mutation fuzzing against `flow-parser` (token deletions, swaps, insertions; `tools/conformance/fuzz.js`) | see the note below |
 
-Fixtures that switch Flow syntax off (`types: false`, `components: false`, …) can't
-be expressed through the npm package, so they are checked against the result
-recorded next to them (`*.tree.json`) instead, with the matching `--no-*` flags.
+Fixtures that switch Flow syntax off can't be expressed through the npm package, so those are also
+checked against Flow's Rust parser (and against the result recorded next to them, `*.tree.json`).
 
-Measured end to end with the release CLI (including process start-up and disk
-reads), a 180 MB `node_modules` corpus checks in about 37 seconds.
+Running real Flow code is what found the three bugs fixed in this revision (identifier characters from
+Unicode `ID_Continue`, `...| A | B` spreads in object types, radix literals above 2^64): the fixture suite
+had none of them.
 
-### Continuous fuzzing
+### Measured, and not at parity
 
-[ClusterFuzzLite](https://google.github.io/clusterfuzzlite/) runs three libFuzzer targets in GitHub
-Actions (`fuzz/fuzz_targets/`): `parse` (no panic, hang or stack overflow under any option set),
-`recover` (the recovering parse always returns a program with in-bounds ranges) and `json` (every range
-is ordered and in bounds, in bytes and in UTF-16 units). Pull requests that touch the parser get a
-5-minute run under AddressSanitizer and UBSan; a nightly batch run goes for an hour. Run one locally
-with `cargo +nightly fuzz run parse` (needs `cargo install cargo-fuzz`).
+These are measured against Flow's Rust parser, not claimed:
+
+| Area | Result |
+|---|---|
+| Error **messages**, first error of the 761 rejected fixtures | 442 identical (58 %). The rest differ in wording (Flow's messages are more specific in many places) |
+| Error **positions**, first error | 613 identical (81 %); 415 have message and position both identical |
+| Error **recovery**, `--recover` | The whole error list is identical for 180 of 761 rejected fixtures and the partial tree for 3: Flow keeps half-parsed statements, prysmite drops a statement that fails. Treat `--recover` output as prysmite's own |
+| **Comment interning**, `--intern-comments` | Real code (Metro and React Native, 2,715 files): 2,629 files and 98.6 % of nodes identical to Flow. Flow's 73 purpose-built fixtures (`comment_interning/`, one construct per file, comments in every possible position): 30 files and 74 % of nodes. It is a pass over the finished tree, not woven through the parser as Flow's is, so unusual positions (`declare class … extends`, decorators, JSX attributes, comments between keywords) can differ |
+| **Depth limits** | By design the limits differ: the library stops at 512 units (about 200 levels, safe on a 2 MiB stack), the CLI at 4096 (about 1,900 levels). Flow's Rust parser accepts about 1,000 levels but not 3,000, and the npm build overflows its stack near 1,000, so inputs between roughly 1,000 and 3,000 levels can disagree |
+| **Option combinations** | The fixtures' own combinations agree 100 % with Flow's parser (above). Combinations no fixture uses are not checked, and `--no-match`/`--no-records` switches don't exist |
+
+Mutation fuzzing: the previous run found 1 disagreement in 6,000 mutants and each fix revealed a few more
+of the same kind, so 100 % is established for the corpora above, not for all input.
 
 ### Known differences from Flow
 
-- **Comments**: collected on `Program.comments`, but not interned onto nodes as
-  `leadingComments`/`trailingComments`.
+- **Comments**: `Program.comments` is always complete; interning onto nodes is opt-in and approximate (above).
 - **Comment types** (`/*: T */`, `/*:: … */`, `/*flow-include … */`) are parsed only with
   `comment_types` / `--comment-types`: Flow's own parser reads them, the npm `flow-parser`
-  package leaves them as comments, and prysmite follows the package by default. With the option on, all 20
-  valid and 8 invalid comment-type fixtures match Flow's recorded results, ranges included.
-- **Output flavor**: the AST matches the npm package (Babel-compatible extras such as
-  `literalType`, `implicitDeclare`, `exportKind`, and a few range conventions). Flow's raw
-  ESTree output, as recorded in the fixtures' `*.tree.json`, differs in exactly those places.
-- **`oxc_type_feature_parser_rules`**: Flow's optional stricter rule set (named
-  function-type parameters, union parenthesization, separator rules) is not implemented.
+  package leaves them as comments, and prysmite follows the package by default.
+- **Output flavor**: the default matches the npm package (Babel-compatible extras such as `literalType`,
+  `implicitDeclare`, `exportKind`, and a few range conventions). `--flow-native` produces Flow's own.
+- **`oxc_type_feature_parser_rules`** is implemented as `--oxc-type-rules` (11 of 11 fixtures identical in
+  first message and position). As with other early errors, the first one is reported.
 - **Opt-in extras**: `export { a as "x" }`, `#x in obj` and `<A b=<c /> />` are rejected by
   default because Flow's parser rejects them; `--es-extras` accepts them.
 - Record expressions with a bare identifier constructor (`R { … }`) need a capitalized
@@ -218,6 +237,8 @@ cargo test
   source-range conventions.
 - `tests/syntax_matrix.rs`: 150+ accept/reject cases (each verified against `flow-parser`)
   and the AST shapes of the newer syntax.
+- `tests/flow_parity.rs`: behaviour checked against Flow's own parser (optional-call quirks, oxc rules,
+  native flavor, comment interning, real-world regressions, error wording).
 - `tests/errors.rs`: early errors (each with a valid counterpart to catch false
   positives), error recovery, and robustness: every prefix and suffix of a
   sample program, byte-level mutations, and random garbage must terminate

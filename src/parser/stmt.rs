@@ -1521,7 +1521,7 @@ impl<'a> Parser<'a> {
                     kstart,
                 )?;
             }
-            self.check_accessor_params(kind, &f.params, kstart)?;
+            self.check_accessor_params(kind, &f.params, key.start)?;
             self.check_unique_params(&f.params, true)?;
             let value = self.node(
                 kstart,

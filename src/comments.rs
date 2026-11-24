@@ -46,7 +46,9 @@ fn collect(v: &Value, depth: usize, out: &mut Vec<N>, is_root: bool, parent: Opt
                     || (kind == "ArrowFunctionExpression"
                         && rest.chars().next().is_some_and(|c| c.is_alphabetic() || c == '_' || c == '$')
                         && !rest.starts_with("async"))
-                    || (kind == "FunctionExpression" && !own_keyword);
+                    || (kind == "FunctionExpression" && !own_keyword)
+                    // Flow starts a private method's name at its `async`/`get`/`*`: the method owns the comment.
+                    || (kind == "PrivateIdentifier" && !rest.starts_with('#'));
                 me = Some(out.len());
                 out.push(N {
                     lr,
@@ -199,14 +201,16 @@ pub fn intern_comments(json: &mut Value, src: &str) {
         m.entry(n.start).or_default().push(i);
         m
     });
+    let c_by_start: std::collections::HashMap<usize, usize> = ranges.iter().map(|r| (r.0, r.1)).collect();
+    let c_by_end: std::collections::HashMap<usize, usize> = ranges.iter().map(|r| (r.1, r.0)).collect();
     let ws = |c: u8| (c as char).is_whitespace();
     let skip_fwd = |mut p: usize| -> usize {
         loop {
             while p < b.len() && ws(b[p]) {
                 p += 1;
             }
-            match ranges.iter().find(|r| r.0 == p) {
-                Some(r) => p = r.1,
+            match c_by_start.get(&p) {
+                Some(&e) => p = e,
                 None => return p,
             }
         }
@@ -216,8 +220,8 @@ pub fn intern_comments(json: &mut Value, src: &str) {
             while p > 0 && ws(b[p - 1]) {
                 p -= 1;
             }
-            match ranges.iter().find(|r| r.1 == p) {
-                Some(r) => p = r.0,
+            match c_by_end.get(&p) {
+                Some(&st) => p = st,
                 None => return p,
             }
         }
@@ -303,6 +307,18 @@ pub fn intern_comments(json: &mut Value, src: &str) {
             next_line_start(a)
         };
         let mut remaining: Vec<usize> = g.clone();
+        // `a, // note`: comments after a comma on its line trail the element before the comma.
+        if a > 0 && b[a - 1] == b',' && (eof || closer || !same_line_next) {
+            let elem_end = skip_back(a - 1);
+            if let Some(mut v) = by_end.get(&elem_end).cloned() {
+                v.sort_by_key(|&i| std::cmp::Reverse((nodes[i].depth, i)));
+                let take: Vec<usize> = g.iter().copied().filter(|&ci| line_of(ranges[ci].0) == line_of(a)).collect();
+                if !take.is_empty() {
+                    trail[v[0]].extend(&take);
+                    remaining.retain(|c| !take.contains(c));
+                }
+            }
+        }
         if !chain.is_empty() && a > 0 {
             let inner = chain[0];
             // Statements, and the first child of a call/member chain, only keep comments on their
@@ -310,9 +326,8 @@ pub fn intern_comments(json: &mut Value, src: &str) {
             let strict = chain.iter().any(|&i| statement_like(&nodes[i].kind))
                 || by_start.contains_key(&nx)
                 || (nx < b.len() && b[nx] == b'(')
-                || (0..nodes.len()).any(|p| {
-                    nodes[p].start == nodes[inner].start
-                        && nodes[p].end > a
+                || by_start.get(&nodes[inner].start).into_iter().flatten().any(|&p| {
+                    nodes[p].end > a
                         && nodes[p].depth < nodes[inner].depth
                         && matches!(
                             nodes[p].kind.as_str(),
@@ -346,7 +361,7 @@ pub fn intern_comments(json: &mut Value, src: &str) {
                 paren = true;
                 pos = skip_fwd(pos + 1);
             } else {
-                target = v.last().copied();
+                target = v.first().copied();
                 break;
             }
         }
@@ -368,6 +383,24 @@ pub fn intern_comments(json: &mut Value, src: &str) {
                     .max_by_key(|&i| (nodes[i].depth, i));
                 if let Some(e) = enc.filter(|&e| takes_internal(&nodes[e].kind)) {
                     trail[e].extend(remaining);
+                }
+            }
+        }
+    }
+    // Shorthand properties: key and value are the same source text; Flow gives both the comments.
+    let mut twins: std::collections::HashMap<(usize, usize, usize), Vec<usize>> = std::collections::HashMap::new();
+    for (i, n) in nodes.iter().enumerate() {
+        if let (Some(p), "Identifier") = (n.parent, n.kind.as_str()) {
+            twins.entry((p, n.start, n.end)).or_default().push(i);
+        }
+    }
+    for group in twins.values().filter(|g| g.len() > 1) {
+        let src_i = group.iter().copied().find(|&i| !lead[i].is_empty() || !trail[i].is_empty());
+        if let Some(si) = src_i {
+            for &j in group {
+                if j != si && lead[j].is_empty() && trail[j].is_empty() {
+                    lead[j] = lead[si].clone();
+                    trail[j] = trail[si].clone();
                 }
             }
         }

@@ -1282,10 +1282,10 @@ impl<'a> Parser<'a> {
                         let value = self.parse_fn_type_rest(vstart, tp, ":")?;
                         if let Kind::FunctionTypeAnnotation { params, rest, this_param, .. } = &value.kind {
                             if kind == "get" && (!params.is_empty() || rest.is_some()) {
-                                self.early("Getter should have zero parameters", mstart)?;
+                                self.early("Getter should have zero parameters", key.start)?;
                             }
                             if kind == "set" && (params.len() != 1 || rest.is_some()) {
-                                self.early("Setter should have exactly one parameter", mstart)?;
+                                self.early("Setter should have exactly one parameter", key.start)?;
                             }
                             if kind == "set" && self.opts.oxc_type_rules {
                                 if let [p] = params.as_slice() {
