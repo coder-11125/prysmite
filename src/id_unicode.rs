@@ -1470,11 +1470,7 @@ fn search(arr: &[(u32, u32)], end_inclusive: bool, target: u32) -> bool {
 
         if target < a {
             finish = mid;
-        } else if if end_inclusive {
-            target > b
-        } else {
-            target >= b
-        } {
+        } else if if end_inclusive { target > b } else { target >= b } {
             start = mid + 1;
         } else {
             return true;
@@ -1492,24 +1488,4 @@ pub fn is_valid_js_identifier_start(code_point: u32) -> bool {
 /// Check if a Unicode code point is a valid JavaScript identifier continue character
 pub fn is_valid_unicode_id(code_point: u32) -> bool {
     search(ID_CONTINUE, false, code_point)
-}
-
-/// Check if a string is a valid JavaScript identifier name.
-/// This is the Rust equivalent of Parser_flow.string_is_valid_identifier_name.
-pub fn string_is_valid_identifier_name(s: &str) -> bool {
-    let mut chars = s.chars();
-    match chars.next() {
-        None => false,
-        Some(first) => {
-            if !is_valid_js_identifier_start(first as u32) {
-                return false;
-            }
-            for c in chars {
-                if !is_valid_unicode_id(c as u32) {
-                    return false;
-                }
-            }
-            true
-        }
-    }
 }

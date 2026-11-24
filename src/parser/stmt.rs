@@ -1598,8 +1598,11 @@ impl<'a> Parser<'a> {
             self.semicolon()?;
         }
         // Flow starts a private field's range at its key (after `static` and decorators).
-        let start =
-            if matches!(key.kind, Kind::PrivateIdentifier { .. }) && !self.opts.native_ranges { key.start } else { start };
+        let start = if matches!(key.kind, Kind::PrivateIdentifier { .. }) && !self.opts.native_ranges {
+            key.start
+        } else {
+            start
+        };
         Ok(self.node(
             start,
             Kind::PropertyDefinition {
@@ -2215,9 +2218,7 @@ impl<'a> Parser<'a> {
                 }
             }
             None if kw == "break" && self.breakable_depth == 0 => self.early("Illegal break statement.", pos),
-            None if kw == "continue" && self.loop_depth == 0 => {
-                self.early("Illegal continue statement", pos)
-            }
+            None if kw == "continue" && self.loop_depth == 0 => self.early("Illegal continue statement", pos),
             None => Ok(()),
         }
     }

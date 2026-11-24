@@ -168,7 +168,9 @@ fn stmt_before_semicolon(nodes: &[N], by_end: &BTreeMap<usize, Vec<usize>>, semi
 /// The node whose header (the tokens before its first child) contains the comment: it takes the
 /// comment as a leading comment (`async /* c */ function f() {}`).
 fn header_owner(nodes: &[N], c: (usize, usize)) -> Option<usize> {
-    let e = (0..nodes.len()).filter(|&i| nodes[i].start < c.0 && c.1 < nodes[i].end).max_by_key(|&i| (nodes[i].depth, i))?;
+    let e = (0..nodes.len())
+        .filter(|&i| nodes[i].start < c.0 && c.1 < nodes[i].end)
+        .max_by_key(|&i| (nodes[i].depth, i))?;
     let first_child = (0..nodes.len()).filter(|&i| nodes[i].parent == Some(e)).map(|i| nodes[i].start).min()?;
     (first_child >= c.1).then_some(e)
 }
@@ -186,7 +188,8 @@ pub fn intern_comments(json: &mut Value, src: &str) {
         Some(Value::Array(a)) => a.clone(),
         _ => return,
     };
-    let ranges: Vec<(usize, usize)> = comments.iter().filter_map(|c| Some((num(c, "start")?, num(c, "end")?))).collect();
+    let ranges: Vec<(usize, usize)> =
+        comments.iter().filter_map(|c| Some((num(c, "start")?, num(c, "end")?))).collect();
     if ranges.len() != comments.len() {
         return;
     }
@@ -251,7 +254,9 @@ pub fn intern_comments(json: &mut Value, src: &str) {
         if nodes[i].kind == "FunctionTypeAnnotation" {
             let p1 = nodes[i].parent.map(|p| nodes[p].kind.as_str());
             let p2 = nodes[i].parent.and_then(|p| nodes[p].parent).map(|p| nodes[p].kind.as_str());
-            if matches!(p1, Some("ObjectTypeProperty" | "DeclareFunction")) || (p1 == Some("TypeAnnotation") && p2 == Some("Identifier")) {
+            if matches!(p1, Some("ObjectTypeProperty" | "DeclareFunction"))
+                || (p1 == Some("TypeAnnotation") && p2 == Some("Identifier"))
+            {
                 nodes[i].lr = true;
             }
         }
@@ -266,7 +271,12 @@ pub fn intern_comments(json: &mut Value, src: &str) {
     let n_prog = match last_flow {
         Some(&i) => before.iter().position(|&x| x == i).unwrap() + 1,
         None => match before.first() {
-            Some(&i) if comments[i]["type"] == "Block" && comments[i]["value"].as_str().is_some_and(|v| v.starts_with('*')) => 1,
+            Some(&i)
+                if comments[i]["type"] == "Block"
+                    && comments[i]["value"].as_str().is_some_and(|v| v.starts_with('*')) =>
+            {
+                1
+            }
             _ => 0,
         },
     };
@@ -346,7 +356,7 @@ pub fn intern_comments(json: &mut Value, src: &str) {
         }
         remaining.sort();
         // Leading: outermost non-left-recursive node starting at the next token.
-        let mut target = None;
+        let target;
         let mut paren = false;
         let mut pos = nx;
         loop {

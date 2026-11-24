@@ -41,7 +41,10 @@ fn oxc_type_rules() {
     for (src, msg) in [
         ("type A = (string) => void;", "Missing a name on this function type parameter"),
         ("type A = string | () => void;", "Function type notation must be parenthesized when used in a union type."),
-        ("type A = string & new () => void;", "Constructor type notation must be parenthesized when used in an intersection type."),
+        (
+            "type A = string & new () => void;",
+            "Constructor type notation must be parenthesized when used in an intersection type.",
+        ),
         ("type A = keyof () => void;", "as the operand of a type operator"),
         ("type A = {[string]: number};", "Missing a name on this indexer key"),
         ("type A = {set a(x?: string)};", "A setter cannot have an optional parameter."),

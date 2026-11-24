@@ -92,7 +92,9 @@ pub fn to_native_flavor(value: &mut serde_json::Value) {
                 }
                 Some(t) if t.starts_with("Declare") => {
                     // Only declarations that are implicitly ambient carry the flag, and only on these two.
-                    if !matches!(t, "DeclareComponent" | "DeclareFunction") || m.get("implicitDeclare") == Some(&serde_json::Value::Bool(false)) {
+                    if !matches!(t, "DeclareComponent" | "DeclareFunction")
+                        || m.get("implicitDeclare") == Some(&serde_json::Value::Bool(false))
+                    {
                         m.remove("implicitDeclare");
                     }
                 }

@@ -505,7 +505,11 @@ impl<'a> Parser<'a> {
                             }
                         }
                         let type_parameters =
-                            if (self.is("<") || self.is("<<")) && !(self.opts.oxc_type_rules && self.tok.nl_before) { Some(Box::new(self.parse_type_args()?)) } else { None };
+                            if (self.is("<") || self.is("<<")) && !(self.opts.oxc_type_rules && self.tok.nl_before) {
+                                Some(Box::new(self.parse_type_args()?))
+                            } else {
+                                None
+                            };
                         Ok(self.node(
                             start,
                             Kind::GenericTypeAnnotation { id: Box::new(id), type_arguments: type_parameters },
@@ -977,7 +981,11 @@ impl<'a> Parser<'a> {
             } else if self.is("...") {
                 let dots = self.tok.start;
                 self.next()?;
-                if self.is("}") || self.is(",") || self.is(";") || (self.is("|") && self.src.as_bytes().get(self.tok.end) == Some(&b'}')) {
+                if self.is("}")
+                    || self.is(",")
+                    || self.is(";")
+                    || (self.is("|") && self.src.as_bytes().get(self.tok.end) == Some(&b'}'))
+                {
                     if class_like || in_interface {
                         return self.error("Explicit inexact syntax can only appear inside an object type", dots);
                     }
@@ -1218,7 +1226,10 @@ impl<'a> Parser<'a> {
                                     return self.error("Unexpected proto modifier", mstart);
                                 }
                                 if self.opts.oxc_type_rules && id.is_none() {
-                                    self.early("Missing a name on this indexer key. Write it as `[name: Type]`.", key.start)?;
+                                    self.early(
+                                        "Missing a name on this indexer key. Write it as `[name: Type]`.",
+                                        key.start,
+                                    )?;
                                 }
                                 let optional = self.eat("?")?;
                                 self.expect(":")?;
@@ -1382,7 +1393,8 @@ impl<'a> Parser<'a> {
             }
 
             if self.opts.oxc_type_rules && self.is(",") {
-                let is_mapped = matches!(properties.last().map(|p| &p.kind), Some(Kind::ObjectTypeMappedTypeProperty { .. }));
+                let is_mapped =
+                    matches!(properties.last().map(|p| &p.kind), Some(Kind::ObjectTypeMappedTypeProperty { .. }));
                 if class_like {
                     self.early("Unexpected `,` between class members, expected `;` or a line break", self.tok.start)?;
                 } else if is_mapped {
