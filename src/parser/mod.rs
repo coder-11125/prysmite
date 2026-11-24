@@ -48,6 +48,9 @@ pub struct ParseOptions {
     /// types in unions/intersections/type operators, line-terminator separators and
     /// TypeScript's same-line rules for `extends` and type arguments.
     pub oxc_type_rules: bool,
+    /// Use the ranges of Flow's native trees where they differ from the npm package's: private
+    /// fields after decorators, hook types, component parameter defaults and `match` bindings.
+    pub native_ranges: bool,
 }
 
 impl Default for ParseOptions {
@@ -64,6 +67,7 @@ impl Default for ParseOptions {
             enums: true,
             es_extras: false,
             oxc_type_rules: false,
+            native_ranges: false,
             comment_types: false,
         }
     }

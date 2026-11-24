@@ -12,9 +12,11 @@ function collect(t, out) {
   const walk = (x) => {
     if (Array.isArray(x)) return x.forEach(walk);
     if (x && typeof x === 'object') {
+      if (x.start !== undefined && !x.range) x = { ...x, range: [x.start, x.end] };
+      const rg = (c) => c.range || [c.start, c.end];
       if (x.type && x.range && x.type !== 'Program') {
-        const l = (x.leadingComments || []).map((c) => c.range.join('-'));
-        const tr = (x.trailingComments || []).map((c) => c.range.join('-'));
+        const l = (x.leadingComments || []).map((c) => rg(c).join('-'));
+        const tr = (x.trailingComments || []).map((c) => rg(c).join('-'));
         if (l.length || tr.length) {
           const k = x.type + '@' + x.range.join('-');
           (out[k] = out[k] || []).push(JSON.stringify({ l, t: tr }));

@@ -1,4 +1,4 @@
-use prysmite::{parse_recovering, parse_with, to_json, to_json_utf16, ParseOptions};
+use prysmite::{parse_recovering, parse_with, to_json, ParseOptions};
 use std::io::{Read, Write};
 use std::process::ExitCode;
 
@@ -26,6 +26,8 @@ OPTIONS:
         --es-extras       accept syntax Flow's parser lacks (string export names, `#x in o`, `<A b=<c/> />`)
         --no-jsx      treat `<` as less-than instead of starting JSX
         --no-loc      omit `start`/`end` offsets from the output
+        --intern-comments  attach comments to nodes as leadingComments/trailingComments (as Flow does)
+        --flow-native report Flow's native tree flavor (no Babel-compatible extras, native ranges)
         --utf16       report offsets in UTF-16 code units (JavaScript string indices), not bytes
     -e, --eval CODE   parse CODE instead of reading a file
         --max-depth N maximum nesting depth (default 512)
@@ -46,6 +48,8 @@ struct Args {
     no_loc: bool,
     utf16: bool,
     recover: bool,
+    intern_comments: bool,
+    native: bool,
 }
 
 enum Input {
@@ -63,6 +67,8 @@ fn parse_args() -> Result<Args, String> {
         no_loc: false,
         utf16: false,
         recover: false,
+        intern_comments: false,
+        native: false,
     };
     let mut it = std::env::args().skip(1);
     while let Some(arg) = it.next() {
@@ -81,6 +87,7 @@ fn parse_args() -> Result<Args, String> {
             "--no-jsx" => a.opts.jsx = false,
             "--no-loc" => a.no_loc = true,
             "--utf16" => a.utf16 = true,
+            "--intern-comments" => a.intern_comments = true,
             "--recover" => a.recover = true,
             "--no-early" => a.opts.early_errors = false,
             "--top-level-await" => a.opts.top_level_await = true,
@@ -91,6 +98,10 @@ fn parse_args() -> Result<Args, String> {
             "--no-enums" => a.opts.enums = false,
             "--es-extras" => a.opts.es_extras = true,
             "--oxc-type-rules" => a.opts.oxc_type_rules = true,
+            "--flow-native" => {
+                a.opts.native_ranges = true;
+                a.native = true;
+            }
             "--comment-types" => a.opts.comment_types = true,
             "--max-depth" => match it.next().and_then(|n| n.parse().ok()) {
                 Some(n) => a.opts.max_depth = n,
@@ -218,7 +229,16 @@ fn run() -> ExitCode {
 }
 
 fn print_ast(out: &mut impl Write, ast: &prysmite::Node, src: &str, args: &Args, pretty: bool, header: Option<&str>) {
-    let mut json = if args.utf16 { to_json_utf16(ast, src) } else { to_json(ast) };
+    let mut json = to_json(ast);
+    if args.intern_comments {
+        prysmite::comments::intern_comments(&mut json, src);
+    }
+    if args.native {
+        prysmite::to_native_flavor(&mut json);
+    }
+    if args.utf16 {
+        json = prysmite::map_json_utf16(json, src);
+    }
     if args.no_loc {
         strip_loc(&mut json);
     }

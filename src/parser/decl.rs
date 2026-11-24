@@ -664,7 +664,7 @@ impl<'a> Parser<'a> {
                 }
                 if self.eat("=")? {
                     let right = self.parse_assign()?;
-                    let lstart = local.start;
+                    let lstart = if self.opts.native_ranges { name.start } else { local.start };
                     // Flow quirk: a parenthesized default's closing `)` isn't in the pattern's range.
                     let end =
                         if self.parenthesized.contains(&(right.start, right.end)) { right.end } else { self.prev_end };

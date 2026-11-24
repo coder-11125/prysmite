@@ -40,7 +40,7 @@ if(TREES){
   const mapFor=(f)=>{const buf=Buffer.from(fs.readFileSync(f).toString('utf8'));const M=new Int32Array(buf.length+1);let u=0,i2=0;while(i2<buf.length){const c=buf[i2];const len=c<0x80?1:c<0xe0?2:c<0xf0?3:4;for(let k=0;k<len&&i2+k<buf.length;k++)M[i2+k]=u;u+=len===4?2:1;i2+=len;}M[buf.length]=u;return M;};
   for(const f of files){
     const t=recordedTree(f); if(!t||(t.errors&&t.errors.length)) continue;
-    const r=cp.spawnSync(BIN,['-m','--comment-types','--es-extras',...cliFlags(f),f],{encoding:'utf8',maxBuffer:1<<30});
+    const r=cp.spawnSync(BIN,['-m','--flow-native','--comment-types','--es-extras',...cliFlags(f),f],{encoding:'utf8',maxBuffer:1<<30});
     if(r.status!==0){compared++;rec('mine rejects a file Flow accepts',f,(r.stderr.split('\n')[0]||''));continue;}
     compared++; if(checkRanges) MAP=mapFor(f);
     if(diff(t,JSON.parse(r.stdout),f,'ROOT','program')) identical++;

@@ -9,6 +9,7 @@
 //! ```
 
 pub mod ast;
+pub mod comments;
 pub mod entities;
 pub mod error;
 pub mod lexer;
@@ -65,7 +66,62 @@ pub fn to_json(node: &Node) -> serde_json::Value {
 /// Like [`to_json`], but with `start`/`end` as UTF-16 code-unit offsets, which is what JavaScript
 /// tooling (and `flow-parser`) uses to index source strings.
 pub fn to_json_utf16(node: &Node, src: &str) -> serde_json::Value {
-    let mut value = to_json(node);
+    map_json_utf16(to_json(node), src)
+}
+
+/// Rewrite a tree in the npm package's Babel-compatible flavor into Flow's native one: drop the
+/// extra fields (`Literal.literalType`, `implicitDeclare`, `ExportSpecifier.exportKind` and
+/// `BigIntLiteralTypeAnnotation.bigint`). Pair it with `ParseOptions::native_ranges`.
+pub fn to_native_flavor(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::Object(m) => {
+            let ty = m.get("type").and_then(|t| t.as_str()).map(str::to_owned);
+            match ty.as_deref() {
+                Some("Literal") => {
+                    m.remove("literalType");
+                }
+                Some("ExportNamedDeclaration") | Some("DeclareExportDeclaration") => {
+                    if ty.as_deref() == Some("DeclareExportDeclaration") {
+                        m.remove("implicitDeclare");
+                        if let Some(d) = m.get_mut("declaration").and_then(|d| d.as_object_mut()) {
+                            d.remove("implicitDeclare");
+                        }
+                    }
+                    // Native trees only mark specifiers in `export type {..}` or when one is a `type` one.
+                    let decl_type = m.get("exportKind").and_then(|k| k.as_str()) == Some("type");
+                    let all_value = m.get("specifiers").and_then(|s| s.as_array()).is_some_and(|specs| {
+                        specs.iter().all(|sp| sp.get("exportKind").and_then(|k| k.as_str()).unwrap_or("value") == "value")
+                    });
+                    if all_value && !decl_type {
+                        if let Some(specs) = m.get_mut("specifiers").and_then(|s| s.as_array_mut()) {
+                            specs.iter_mut().for_each(|sp| {
+                                if let Some(o) = sp.as_object_mut() {
+                                    o.remove("exportKind");
+                                }
+                            });
+                        }
+                    }
+                }
+                Some("BigIntLiteralTypeAnnotation") => {
+                    m.remove("bigint");
+                }
+                Some(t) if t.starts_with("Declare") => {
+                    // Only declarations that are implicitly ambient carry the flag, and only on these two.
+                    if !matches!(t, "DeclareComponent" | "DeclareFunction") || m.get("implicitDeclare") == Some(&serde_json::Value::Bool(false)) {
+                        m.remove("implicitDeclare");
+                    }
+                }
+                _ => {}
+            }
+            m.values_mut().for_each(to_native_flavor);
+        }
+        serde_json::Value::Array(a) => a.iter_mut().for_each(to_native_flavor),
+        _ => {}
+    }
+}
+
+/// Map the byte offsets of an already serialized tree to UTF-16 code units.
+pub fn map_json_utf16(mut value: serde_json::Value, src: &str) -> serde_json::Value {
     if src.is_ascii() {
         return value;
     }

@@ -453,7 +453,7 @@ impl<'a> Parser<'a> {
                     let tp = if self.is("<") { Some(Box::new(self.parse_type_params()?)) } else { None };
                     if name == "hook" {
                         // Flow quirk: a hook type's range starts at its `(`, after any type parameters.
-                        let paren = self.tok.start;
+                        let paren = if self.opts.native_ranges { start } else { self.tok.start };
                         let _ = after_kw;
                         let f = self.parse_fn_type_rest(paren, tp, "=>")?;
                         return Ok(self.fn_type_to_hook(f));

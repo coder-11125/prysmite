@@ -162,8 +162,10 @@ impl<'a> Parser<'a> {
             } else {
                 // Flow quirk: the identifier carries the range of the token after it.
                 let mut id = self.parse_ident()?;
-                id.start = self.tok.start;
-                id.end = self.tok.end;
+                if !self.opts.native_ranges {
+                    id.start = self.tok.start;
+                    id.end = self.tok.end;
+                }
                 id
             };
             p = self.node(start, Kind::MatchAsPattern { pattern: Box::new(p), target: Box::new(target) });
@@ -179,8 +181,10 @@ impl<'a> Parser<'a> {
         let mut id = self.parse_ident()?;
         let end = id.end;
         // Flow quirk: a binding's identifier carries the range of the token after the pattern.
-        id.start = self.tok.start;
-        id.end = self.tok.end;
+        if !self.opts.native_ranges {
+            id.start = self.tok.start;
+            id.end = self.tok.end;
+        }
         Ok(Node::new(Kind::MatchBindingPattern { id: Box::new(id), kind }, start, end))
     }
 
@@ -327,9 +331,15 @@ impl<'a> Parser<'a> {
                 };
                 let mut id = self.parse_ident()?;
                 let end = id.end;
-                id.start = self.tok.start;
-                id.end = self.tok.end;
-                let name_key = id.clone();
+                if !self.opts.native_ranges {
+                    id.start = self.tok.start;
+                    id.end = self.tok.end;
+                }
+                let mut name_key = id.clone();
+                if self.opts.native_ranges {
+                    // Native trees give the shorthand key the range of the whole binding.
+                    name_key.start = pstart;
+                }
                 let pat = Node::new(Kind::MatchBindingPattern { id: Box::new(id), kind }, pstart, end);
                 key = name_key;
                 (pat, true)
