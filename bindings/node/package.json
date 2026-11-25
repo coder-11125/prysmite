@@ -1,0 +1,15 @@
+{
+  "name": "prysmite",
+  "version": "0.1.0",
+  "description": "Flow-accurate parsing for JavaScript tools (WebAssembly build of the Rust parser). Not published: kept in the repository.",
+  "private": true,
+  "license": "MIT",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "files": ["index.js", "index.d.ts", "pkg"],
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "build": "./build.sh",
+    "test": "node --test test/*.test.js"
+  }
+}

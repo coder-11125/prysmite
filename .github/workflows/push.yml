@@ -1,0 +1,66 @@
+name: Push checks
+
+# Fast checks on every push to any branch: formatting, lints, build, tests and docs.
+on:
+  push:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+  RUSTDOCFLAGS: -D warnings
+
+concurrency:
+  group: push-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Check (locked)
+        run: cargo check --all-targets --locked
+      - name: Clippy
+        run: cargo clippy --all-targets --locked -- -D warnings
+      - name: Tests
+        run: cargo test --all-targets --locked
+      - name: Doc tests
+        run: cargo test --doc --locked
+      - name: Docs
+        run: cargo doc --no-deps --locked
+
+  bindings:
+    # The WebAssembly build and the Node wrapper (kept in the repository, not published).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+            bindings/wasm -> target
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Cache wasm-bindgen-cli
+        id: bindgen
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo-bindgen
+          key: wasm-bindgen-cli-0.2.100
+      - name: Install wasm-bindgen-cli
+        if: steps.bindgen.outputs.cache-hit != 'true'
+        run: cargo install wasm-bindgen-cli --version 0.2.100 --locked --root ~/.cargo-bindgen
+      - name: Build
+        run: WASM_BINDGEN=$HOME/.cargo-bindgen/bin/wasm-bindgen bindings/node/build.sh
+      - name: Test
+        run: node --test bindings/node/test/*.test.js

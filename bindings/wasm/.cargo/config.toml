@@ -1,0 +1,6 @@
+[build]
+target = "wasm32-unknown-unknown"
+
+# Recursive descent needs stack: give the module 16 MiB instead of the 1 MiB default.
+[target.wasm32-unknown-unknown]
+rustflags = ["-C", "link-arg=-zstack-size=16777216"]

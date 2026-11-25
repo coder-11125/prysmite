@@ -1,0 +1,25 @@
+[package]
+name = "prysmite-wasm"
+version = "0.1.0"
+edition = "2021"
+description = "WebAssembly bindings for prysmite (used by the Node package in ../node)"
+license = "MIT"
+# Not published anywhere: the bindings live in this repository only.
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+# Keep this crate out of any parent workspace; it builds for wasm32 only.
+[workspace]
+
+[dependencies]
+prysmite = { path = "../.." }
+serde_json = "1"
+wasm-bindgen = "=0.2.100"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
